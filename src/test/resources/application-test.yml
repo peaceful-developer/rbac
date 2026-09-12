@@ -1,0 +1,19 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:iamdb-test;MODE=PostgreSQL;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: sa
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: false
+  flyway:
+    enabled: false
+
+iam:
+  jwt:
+    secret: test-secret-key-which-should-be-at-least-256-bits-long-for-hs256-signing
+    access-token-ttl-minutes: 15
+    refresh-token-ttl-days: 7
+    issuer: iam-service-test

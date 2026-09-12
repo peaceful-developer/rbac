@@ -1,0 +1,35 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: iam-postgres
+    environment:
+      POSTGRES_DB: iamdb
+      POSTGRES_USER: iam
+      POSTGRES_PASSWORD: iam
+    ports:
+      - "5432:5432"
+    volumes:
+      - iam-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U iam -d iamdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  iam-service:
+    build: .
+    container_name: iam-service
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/iamdb
+      DB_USERNAME: iam
+      DB_PASSWORD: iam
+      JWT_SECRET: ${JWT_SECRET:-change-this-super-secret-key-which-should-be-at-least-256-bits-long-for-hs256}
+      SPRING_PROFILES_ACTIVE: prod
+    ports:
+      - "8080:8080"
+
+volumes:
+  iam-postgres-data:
