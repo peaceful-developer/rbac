@@ -40,20 +40,27 @@ public class RoleController {
     private final RoleService roleService;
 
     @GetMapping
-    @PreAuthorize("hasAuthority('ROLE_READ') or hasAuthority('MASTER_ADMIN')")
+    @PreAuthorize("hasAuthority('ROLE_READ') or hasAuthority('MASTER_ADMIN') or @projectAuthorizationService.isSuperAdminOfAnyProject()")
     public ResponseEntity<List<RoleResponse>> listRoles() {
         return ResponseEntity.ok(roleService.listRoles().stream().map(RoleResponse::from).toList());
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAuthority('ROLE_READ') or hasAuthority('MASTER_ADMIN')")
+    @PreAuthorize("hasAuthority('ROLE_READ') or hasAuthority('MASTER_ADMIN') or @projectAuthorizationService.isSuperAdminOfAnyProject()")
     public ResponseEntity<RoleResponse> getRole(@PathVariable Long id) {
         return ResponseEntity.ok(RoleResponse.from(roleService.getById(id)));
     }
 
-    /** Creates a role with an optional starting permission set - see CreateRoleRequest. Comes out locked iff the caller is a Master Admin - see RoleService#createRole. */
+    /**
+     * Creates a role with an optional starting permission set - see CreateRoleRequest.
+     * Comes out locked iff the caller is a Master Admin - see RoleService#createRole.
+     * A project Super Admin is deliberately let through too (the seeded {@code
+     * SUPER_ADMIN} role carries {@code ROLE_WRITE}): this is the "build a role from
+     * the permission catalog a Master Admin defined" workflow described in the
+     * Master Admin & Projects hierarchy.
+     */
     @PostMapping
-    @PreAuthorize("hasAuthority('ROLE_WRITE') or hasAuthority('MASTER_ADMIN')")
+    @PreAuthorize("hasAuthority('ROLE_WRITE') or hasAuthority('MASTER_ADMIN') or @projectAuthorizationService.isSuperAdminOfAnyProject()")
     public ResponseEntity<RoleResponse> createRole(@Valid @RequestBody CreateRoleRequest request,
                                                     @AuthenticationPrincipal UserPrincipal principal) {
         return ResponseEntity.status(HttpStatus.CREATED)
@@ -62,7 +69,7 @@ public class RoleController {
 
     /** Only the description is mutable here - a role's name and permissions are set at creation/via the dedicated endpoints respectively. */
     @PutMapping("/{id}")
-    @PreAuthorize("hasAuthority('ROLE_WRITE') or hasAuthority('MASTER_ADMIN')")
+    @PreAuthorize("hasAuthority('ROLE_WRITE') or hasAuthority('MASTER_ADMIN') or @projectAuthorizationService.isSuperAdminOfAnyProject()")
     public ResponseEntity<RoleResponse> updateRole(@PathVariable Long id, @Valid @RequestBody UpdateRoleRequest request,
                                                     @AuthenticationPrincipal UserPrincipal principal) {
         return ResponseEntity.ok(RoleResponse.from(roleService.updateRole(id, request, principal.isMasterAdmin())));
@@ -75,7 +82,7 @@ public class RoleController {
      * holding this role can do (see RoleService for the cache-eviction behavior).
      */
     @PutMapping("/{id}/permissions")
-    @PreAuthorize("hasAuthority('ROLE_WRITE') or hasAuthority('MASTER_ADMIN')")
+    @PreAuthorize("hasAuthority('ROLE_WRITE') or hasAuthority('MASTER_ADMIN') or @projectAuthorizationService.isSuperAdminOfAnyProject()")
     public ResponseEntity<RoleResponse> assignPermissions(@PathVariable Long id, @Valid @RequestBody AssignPermissionsRequest request,
                                                            @AuthenticationPrincipal UserPrincipal principal) {
         return ResponseEntity.ok(RoleResponse.from(roleService.assignPermissions(id, request, principal.isMasterAdmin())));

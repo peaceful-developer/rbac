@@ -55,6 +55,31 @@ public class ProjectAuthorizationService {
                 || projectMembershipRepository.existsByProjectIdAndUserId(projectId, principal.getId());
     }
 
+    /**
+     * True if the current user is a Master Admin, or holds the {@code SUPER_ADMIN}
+     * role on <em>any</em> project membership - not scoped to one project, unlike
+     * every other check here. This backs access to the global role/permission
+     * catalog (see RoleController/PermissionController): that catalog is shared
+     * across every project by design (roles/permissions are never project-scoped),
+     * so a Super Admin's {@code ROLE_READ}/{@code ROLE_WRITE}/{@code PERMISSION_READ}
+     * permissions - real permissions on the seeded {@code SUPER_ADMIN} role, but only
+     * ever held via a project membership, never a global {@code User.roles} row and
+     * therefore never embedded as a JWT authority - would otherwise be completely
+     * inert against endpoints gated on the global authority alone.
+     */
+    public boolean isSuperAdminOfAnyProject() {
+        UserPrincipal principal = currentPrincipal();
+        if (principal == null) {
+            return false;
+        }
+        if (principal.isMasterAdmin()) {
+            return true;
+        }
+        return projectMembershipRepository.findByUserId(principal.getId()).stream()
+                .flatMap(membership -> membership.getRoles().stream())
+                .anyMatch(role -> role.getName().equals("SUPER_ADMIN"));
+    }
+
     private boolean hasAuthority(ProjectMembership membership, String authority) {
         return membership.getRoles().stream()
                 .flatMap(role -> role.getPermissions().stream())

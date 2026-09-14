@@ -181,6 +181,55 @@ class ProjectControllerIT {
     }
 
     @Test
+    void superAdminCanReadAndBuildRolesFromGlobalCatalogViaProjectMembershipAlone() throws Exception {
+        String masterAdminToken = createMasterAdminAndLogin("boss6");
+        Long projectId = createProject(masterAdminToken, "Role Builder Corp");
+
+        String superAdminToken = registerPlainUser("rolesuper");
+        Long superAdminUserId = currentUserId(superAdminToken);
+        mockMvc.perform(post("/api/projects/" + projectId + "/members")
+                        .header("Authorization", "Bearer " + masterAdminToken)
+                        .contentType("application/json")
+                        .content(objectMapper.writeValueAsString(new AddProjectMemberRequest(superAdminUserId, Set.of("SUPER_ADMIN")))))
+                .andExpect(status().isCreated());
+
+        // Their SUPER_ADMIN role only ever exists as a project membership row, never a
+        // global User.roles entry - so it carries no ROLE_READ/ROLE_WRITE JWT authority.
+        // The global role/permission catalog must still be reachable, since it's shared
+        // across every project and this Super Admin needs it to pick/build roles for
+        // their own project's members.
+        mockMvc.perform(get("/api/roles").header("Authorization", "Bearer " + superAdminToken))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/permissions").header("Authorization", "Bearer " + superAdminToken))
+                .andExpect(status().isOk());
+
+        // They can build a new (unlocked) role from that catalog...
+        String createResponse = mockMvc.perform(post("/api/roles")
+                        .header("Authorization", "Bearer " + superAdminToken)
+                        .contentType("application/json")
+                        .content(objectMapper.writeValueAsString(new CreateRoleRequest("PROJECT_REPORTER", "Read-only reporter", Set.of()))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.editable").value(true))
+                .andReturn().getResponse().getContentAsString();
+        Long newRoleId = objectMapper.readTree(createResponse).get("id").asLong();
+
+        // ...but still can't touch a locked, Master-Admin-owned role.
+        mockMvc.perform(put("/api/roles/" + newRoleId)
+                        .header("Authorization", "Bearer " + superAdminToken)
+                        .contentType("application/json")
+                        .content(objectMapper.writeValueAsString(new UpdateRoleRequest("Reporter, updated"))))
+                .andExpect(status().isOk());
+
+        Role adminRole = roleRepository.findByName("ADMIN").orElseThrow();
+        mockMvc.perform(put("/api/roles/" + adminRole.getId())
+                        .header("Authorization", "Bearer " + superAdminToken)
+                        .contentType("application/json")
+                        .content(objectMapper.writeValueAsString(new UpdateRoleRequest("Attempted takeover"))))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
     void superAdminOfOneProjectHasNoAuthorityOverAnother() throws Exception {
         String masterAdminToken = createMasterAdminAndLogin("boss2");
         Long projectA = createProject(masterAdminToken, "Project A");
