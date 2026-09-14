@@ -153,6 +153,34 @@ class ProjectControllerIT {
     }
 
     @Test
+    void superAdminCanPickCandidateUsersWithoutGlobalUserReadAccess() throws Exception {
+        String masterAdminToken = createMasterAdminAndLogin("boss5");
+        Long projectId = createProject(masterAdminToken, "Candidate Corp");
+
+        String superAdminToken = registerPlainUser("candsuper");
+        Long superAdminUserId = currentUserId(superAdminToken);
+        mockMvc.perform(post("/api/projects/" + projectId + "/members")
+                        .header("Authorization", "Bearer " + masterAdminToken)
+                        .contentType("application/json")
+                        .content(objectMapper.writeValueAsString(new AddProjectMemberRequest(superAdminUserId, Set.of("SUPER_ADMIN")))))
+                .andExpect(status().isCreated());
+
+        String candidateToken = registerPlainUser("candmember");
+        currentUserId(candidateToken);
+
+        // A plain, self-registered Super Admin holds no global USER_READ - the full user list stays forbidden...
+        mockMvc.perform(get("/api/users").header("Authorization", "Bearer " + superAdminToken))
+                .andExpect(status().isForbidden());
+
+        // ...but they can still pick who to add to their own project via the narrower, project-scoped endpoint.
+        mockMvc.perform(get("/api/projects/" + projectId + "/candidate-users")
+                        .header("Authorization", "Bearer " + superAdminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.username=='candmember')]").exists())
+                .andExpect(jsonPath("$[?(@.username=='candsuper')]").doesNotExist());
+    }
+
+    @Test
     void superAdminOfOneProjectHasNoAuthorityOverAnother() throws Exception {
         String masterAdminToken = createMasterAdminAndLogin("boss2");
         Long projectA = createProject(masterAdminToken, "Project A");

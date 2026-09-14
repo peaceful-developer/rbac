@@ -8,6 +8,7 @@ import com.iam.dto.request.AddProjectMemberRequest;
 import com.iam.dto.request.CreateProjectRequest;
 import com.iam.dto.request.UpdateProjectMemberRolesRequest;
 import com.iam.dto.request.UpdateProjectRequest;
+import com.iam.dto.response.CandidateUserResponse;
 import com.iam.dto.response.ProjectMemberResponse;
 import com.iam.dto.response.ProjectResponse;
 import com.iam.exception.DuplicateResourceException;
@@ -112,6 +113,24 @@ public class ProjectService {
         findProject(projectId);
         return projectMembershipRepository.findByProjectId(projectId).stream()
                 .map(ProjectMemberResponse::from)
+                .toList();
+    }
+
+    /**
+     * Users not yet a member of this project, as a minimal id/username/email
+     * projection - what {@code AddMemberDialog}-style UIs need to let a project's
+     * Super Admin (who does not and should not hold {@code USER_READ}) pick someone
+     * to add, without exposing the full account list {@code GET /api/users} does.
+     */
+    @Transactional(readOnly = true)
+    public List<CandidateUserResponse> listCandidateUsers(Long projectId) {
+        findProject(projectId);
+        Set<Long> memberUserIds = projectMembershipRepository.findByProjectId(projectId).stream()
+                .map(m -> m.getUser().getId())
+                .collect(Collectors.toSet());
+        return userRepository.findAll().stream()
+                .filter(user -> !memberUserIds.contains(user.getId()))
+                .map(CandidateUserResponse::from)
                 .toList();
     }
 
