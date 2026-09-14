@@ -6,6 +6,7 @@ import com.iam.domain.Role;
 import com.iam.domain.User;
 import com.iam.dto.request.AddProjectMemberRequest;
 import com.iam.dto.request.CreateProjectRequest;
+import com.iam.dto.request.CreateProjectUserRequest;
 import com.iam.dto.request.UpdateProjectMemberRolesRequest;
 import com.iam.dto.request.UpdateProjectRequest;
 import com.iam.dto.response.CandidateUserResponse;
@@ -20,6 +21,7 @@ import com.iam.repository.UserRepository;
 import com.iam.security.UserPrincipal;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -44,10 +46,14 @@ public class ProjectService {
 
     private static final String SUPER_ADMIN_ROLE = "SUPER_ADMIN";
 
+    /** Global role given to accounts created through a project; carries no permissions, same as self-registration's default. */
+    private static final String BASELINE_GLOBAL_ROLE = "USER";
+
     private final ProjectRepository projectRepository;
     private final ProjectMembershipRepository projectMembershipRepository;
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
+    private final PasswordEncoder passwordEncoder;
 
     /** Master Admins see every project; everyone else sees only projects they're a member of. Either way, {@code myRoles} reflects the caller's own membership, if any. */
     @Transactional(readOnly = true)
@@ -152,6 +158,53 @@ public class ProjectService {
                 .project(project)
                 .user(user)
                 .roles(roles)
+                .build();
+
+        return ProjectMemberResponse.from(projectMembershipRepository.save(membership));
+    }
+
+    /**
+     * Creates a brand-new account and adds it to this project in one step - the
+     * tenant-onboarding counterpart to {@link #addMember}, which can only pick someone
+     * who already has an account.
+     * <p>
+     * A project's Super Admin holds no {@code USER_WRITE} (global user administration
+     * stays a Master Admin / legacy-{@code ADMIN} affair), so without this they could
+     * only ever add staff who had already self-registered. The account is created with
+     * the same permission-less baseline {@code USER} global role self-registration
+     * grants; everything the new user can actually do comes from the project roles
+     * assigned here, which keeps a Super Admin's reach inside their own project.
+     */
+    @Transactional
+    public ProjectMemberResponse createUserInProject(Long projectId, CreateProjectUserRequest request, boolean callerIsMasterAdmin) {
+        Project project = findProject(projectId);
+
+        if (userRepository.existsByUsername(request.username())) {
+            throw new DuplicateResourceException("Username '" + request.username() + "' is already taken");
+        }
+        if (userRepository.existsByEmail(request.email())) {
+            throw new DuplicateResourceException("Email '" + request.email() + "' is already registered");
+        }
+
+        Set<Role> projectRoles = resolveRoles(request.roles());
+        requireMasterAdminForSuperAdminChanges(projectRoles, Set.of(), callerIsMasterAdmin);
+
+        Role baselineRole = roleRepository.findByName(BASELINE_GLOBAL_ROLE)
+                .orElseThrow(() -> new ResourceNotFoundException("Role not found: " + BASELINE_GLOBAL_ROLE));
+
+        User user = userRepository.save(User.builder()
+                .username(request.username())
+                .email(request.email())
+                .passwordHash(passwordEncoder.encode(request.password()))
+                .firstName(request.firstName())
+                .lastName(request.lastName())
+                .roles(Set.of(baselineRole))
+                .build());
+
+        ProjectMembership membership = ProjectMembership.builder()
+                .project(project)
+                .user(user)
+                .roles(projectRoles)
                 .build();
 
         return ProjectMemberResponse.from(projectMembershipRepository.save(membership));

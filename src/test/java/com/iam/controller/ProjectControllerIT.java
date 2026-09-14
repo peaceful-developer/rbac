@@ -230,6 +230,64 @@ class ProjectControllerIT {
     }
 
     @Test
+    void superAdminCanCreateNewUsersDirectlyIntoTheirOwnProject() throws Exception {
+        String masterAdminToken = createMasterAdminAndLogin("boss7");
+        Long projectId = createProject(masterAdminToken, "Onboarding Corp");
+
+        String superAdminToken = registerPlainUser("onboardsuper");
+        Long superAdminUserId = currentUserId(superAdminToken);
+        mockMvc.perform(post("/api/projects/" + projectId + "/members")
+                        .header("Authorization", "Bearer " + masterAdminToken)
+                        .contentType("application/json")
+                        .content(objectMapper.writeValueAsString(new AddProjectMemberRequest(superAdminUserId, Set.of("SUPER_ADMIN")))))
+                .andExpect(status().isCreated());
+
+        // The Super Admin holds no USER_WRITE, so global account creation stays closed to them...
+        mockMvc.perform(post("/api/users")
+                        .header("Authorization", "Bearer " + superAdminToken)
+                        .contentType("application/json")
+                        .content(objectMapper.writeValueAsString(
+                                new CreateUserRequest("globaluser", "globaluser@example.com", "SuperSecret1", "Global", "User", Set.of()))))
+                .andExpect(status().isForbidden());
+
+        // ...but they can onboard a brand-new account straight into their own project.
+        mockMvc.perform(post("/api/projects/" + projectId + "/users")
+                        .header("Authorization", "Bearer " + superAdminToken)
+                        .contentType("application/json")
+                        .content(objectMapper.writeValueAsString(new CreateProjectUserRequest(
+                                "newstaff", "newstaff@example.com", "SuperSecret1", "New", "Staff", Set.of("MANAGER")))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.username").value("newstaff"))
+                .andExpect(jsonPath("$.roles[0]").value("MANAGER"));
+
+        // The new account is a real, usable login whose reach is its project membership,
+        // not any global authority - the baseline USER role carries no permissions.
+        String newStaffToken = objectMapper.readTree(
+                mockMvc.perform(post("/api/auth/login")
+                                .contentType("application/json")
+                                .content(objectMapper.writeValueAsString(new LoginRequest("newstaff", "SuperSecret1"))))
+                        .andExpect(status().isOk())
+                        .andReturn().getResponse().getContentAsString()
+        ).get("accessToken").asText();
+
+        mockMvc.perform(get("/api/users").header("Authorization", "Bearer " + newStaffToken))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(get("/api/projects/" + projectId + "/members")
+                        .header("Authorization", "Bearer " + superAdminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2));
+
+        // A Super Admin still can't bootstrap a rival Super Admin through this path.
+        mockMvc.perform(post("/api/projects/" + projectId + "/users")
+                        .header("Authorization", "Bearer " + superAdminToken)
+                        .contentType("application/json")
+                        .content(objectMapper.writeValueAsString(new CreateProjectUserRequest(
+                                "rivalstaff", "rivalstaff@example.com", "SuperSecret1", "Rival", "Staff", Set.of("SUPER_ADMIN")))))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
     void superAdminOfOneProjectHasNoAuthorityOverAnother() throws Exception {
         String masterAdminToken = createMasterAdminAndLogin("boss2");
         Long projectA = createProject(masterAdminToken, "Project A");
