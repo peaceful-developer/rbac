@@ -129,6 +129,22 @@ public class UserService {
         return userRepository.save(user);
     }
 
+    /**
+     * Grants or revokes the platform-level Master Admin flag (see {@code User#isMasterAdmin}).
+     * Deliberately not exposed through {@link #updateUser} - this is a much higher-stakes
+     * change and controller-gated to Master-Admin-only callers (see UserController), so
+     * only an existing Master Admin can ever create another one. Evicts the cache entry
+     * since "MASTER_ADMIN" is embedded as an authority (see UserPrincipal) and would
+     * otherwise only take effect once the 60s cache TTL lapses.
+     */
+    @Transactional
+    @CacheEvict(cacheNames = CacheConfig.USER_DETAILS_CACHE, key = "#result.username")
+    public User setMasterAdmin(Long id, boolean masterAdmin) {
+        User user = getById(id);
+        user.setMasterAdmin(masterAdmin);
+        return userRepository.save(user);
+    }
+
     /** Deletes the account and revokes any outstanding refresh tokens/cache entry so a deleted user can't keep a session alive. */
     @Transactional
     public void deleteUser(Long id) {

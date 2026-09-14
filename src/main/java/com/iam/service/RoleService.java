@@ -11,6 +11,7 @@ import com.iam.exception.ResourceNotFoundException;
 import com.iam.repository.PermissionRepository;
 import com.iam.repository.RoleRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,6 +25,12 @@ import java.util.stream.Collectors;
  * UserPrincipals (see CacheConfig) don't know which ones. Rather than tracking that,
  * these mutations just clear the whole cache - an infrequent admin action trading a
  * brief burst of cache misses for correctness.
+ * <p>
+ * Every mutating method here takes a {@code callerIsMasterAdmin} flag (passed through
+ * from the controller's {@code @AuthenticationPrincipal}) rather than depending on
+ * Spring Security types directly - see {@link #createRole} and the
+ * {@link #requireEditable} check for how it's used to enforce the locked-role rule
+ * (see {@code Role#isEditable}).
  */
 @Service
 @RequiredArgsConstructor
@@ -44,9 +51,17 @@ public class RoleService {
                 .orElseThrow(() -> new ResourceNotFoundException("Role not found: " + id));
     }
 
-    /** Creates a role with an optional starting permission set (empty set if none given - see {@link #resolvePermissions}). */
+    /**
+     * Creates a role with an optional starting permission set (empty set if none given
+     * - see {@link #resolvePermissions}). A role created by a Master Admin comes out
+     * locked ({@code editable = false}, see {@link Role#isEditable}); anyone else's
+     * (e.g. a project Super Admin building a role from the permission catalog) comes
+     * out editable. This isn't client-controlled - it's derived entirely from who's
+     * making the call, so there's no separate permission check needed to prevent a
+     * non-Master-Admin from minting a locked role.
+     */
     @Transactional
-    public Role createRole(CreateRoleRequest request) {
+    public Role createRole(CreateRoleRequest request, boolean callerIsMasterAdmin) {
         if (roleRepository.existsByName(request.name())) {
             throw new DuplicateResourceException("Role '" + request.name() + "' already exists");
         }
@@ -54,6 +69,7 @@ public class RoleService {
         Role role = Role.builder()
                 .name(request.name())
                 .description(request.description())
+                .editable(!callerIsMasterAdmin)
                 .permissions(resolvePermissions(request.permissions()))
                 .build();
 
@@ -61,8 +77,9 @@ public class RoleService {
     }
 
     @Transactional
-    public Role updateRole(Long id, UpdateRoleRequest request) {
+    public Role updateRole(Long id, UpdateRoleRequest request, boolean callerIsMasterAdmin) {
         Role role = getById(id);
+        requireEditable(role, callerIsMasterAdmin);
         if (request.description() != null) {
             role.setDescription(request.description());
         }
@@ -71,8 +88,9 @@ public class RoleService {
 
     /** Replaces (not merges with) the role's entire permission set, then clears the auth cache - see the class-level note above. */
     @Transactional
-    public Role assignPermissions(Long id, AssignPermissionsRequest request) {
+    public Role assignPermissions(Long id, AssignPermissionsRequest request, boolean callerIsMasterAdmin) {
         Role role = getById(id);
+        requireEditable(role, callerIsMasterAdmin);
         role.setPermissions(resolvePermissions(request.permissions()));
         Role saved = roleRepository.save(role);
         clearUserDetailsCache();
@@ -80,10 +98,18 @@ public class RoleService {
     }
 
     @Transactional
-    public void deleteRole(Long id) {
+    public void deleteRole(Long id, boolean callerIsMasterAdmin) {
         Role role = getById(id);
+        requireEditable(role, callerIsMasterAdmin);
         roleRepository.delete(role);
         clearUserDetailsCache();
+    }
+
+    /** Enforces the lock on non-editable roles (e.g. the seeded ADMIN/SUPER_ADMIN) - only a Master Admin may bypass it. */
+    private void requireEditable(Role role, boolean callerIsMasterAdmin) {
+        if (!role.isEditable() && !callerIsMasterAdmin) {
+            throw new AccessDeniedException("Role '" + role.getName() + "' is locked and can only be modified by a Master Admin");
+        }
     }
 
     private void clearUserDetailsCache() {

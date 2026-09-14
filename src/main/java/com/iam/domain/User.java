@@ -60,6 +60,19 @@ public class User {
     private boolean accountNonLocked = true;
 
     /**
+     * Platform-level super-authority, deliberately separate from the Role/Permission
+     * system: there is no "MASTER_ADMIN" row in the roles table, so it can never be
+     * granted or revoked through the normal role-assignment endpoints - only through
+     * {@code UserService#setMasterAdmin}, which itself requires an existing Master
+     * Admin caller. See {@code UserPrincipal}, which embeds this as a literal
+     * "MASTER_ADMIN" authority, and {@code ProjectAuthorizationService}, which lets a
+     * Master Admin bypass every per-project permission check.
+     */
+    @Builder.Default
+    @Column(name = "master_admin", nullable = false)
+    private boolean masterAdmin = false;
+
+    /**
      * Reserved for a future automatic-lockout-after-N-failed-attempts policy.
      * Currently unused: nothing in this codebase increments or reads it yet, so it
      * stays at 0. Not wired into login failure handling - don't assume it's enforced.

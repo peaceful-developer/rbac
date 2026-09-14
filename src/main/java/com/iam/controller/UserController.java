@@ -3,6 +3,7 @@ package com.iam.controller;
 import com.iam.dto.request.AssignRolesRequest;
 import com.iam.dto.request.ChangePasswordRequest;
 import com.iam.dto.request.CreateUserRequest;
+import com.iam.dto.request.SetMasterAdminRequest;
 import com.iam.dto.request.UpdateUserRequest;
 import com.iam.dto.response.UserResponse;
 import com.iam.security.UserPrincipal;
@@ -89,5 +90,18 @@ public class UserController {
     public ResponseEntity<Void> deleteUser(@PathVariable Long id) {
         userService.deleteUser(id);
         return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Grants or revokes the platform-level Master Admin flag. Deliberately requires
+     * the caller to already be a Master Admin (not just {@code USER_WRITE}) - this is
+     * how "only a Master Admin can create another Master Admin" is enforced, and it's
+     * the only way this flag can ever change (there is no MASTER_ADMIN row in the
+     * roles table for {@link #assignRoles} to touch).
+     */
+    @PatchMapping("/{id}/master-admin")
+    @PreAuthorize("hasAuthority('MASTER_ADMIN')")
+    public ResponseEntity<UserResponse> setMasterAdmin(@PathVariable Long id, @Valid @RequestBody SetMasterAdminRequest request) {
+        return ResponseEntity.ok(UserResponse.from(userService.setMasterAdmin(id, request.masterAdmin())));
     }
 }

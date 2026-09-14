@@ -43,6 +43,16 @@ public class Role {
     private String description;
 
     /**
+     * Whether non-Master-Admins holding ROLE_WRITE may edit this role's description,
+     * change its permissions, or delete it. Roles created by a Master Admin (e.g. the
+     * seeded ADMIN/SUPER_ADMIN) come out {@code false} - see RoleService, which is
+     * where this is actually enforced (a Master Admin can always bypass the lock).
+     */
+    @Builder.Default
+    @Column(nullable = false)
+    private boolean editable = true;
+
+    /**
      * Eagerly fetched: roles are small in number and read far more often than written,
      * and every request that resolves a user's authorities needs this set (see
      * {@code UserPrincipal}), so lazy-loading would just trade one query for another
