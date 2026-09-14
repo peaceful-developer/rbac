@@ -117,6 +117,17 @@ Master Admin (platform-level, not a Role — a flag on User)
 - Roles/permissions stay a single global catalog (not project-scoped) — a Super
   Admin builds new roles from whatever permissions a Master Admin has defined, and
   those roles are then usable across any project, same as the legacy `ADMIN`/`MANAGER`/`USER` roles.
+  This is why the seeded `SUPER_ADMIN` role carries `ROLE_READ`/`ROLE_WRITE`/
+  `PERMISSION_READ` alongside its `PROJECT_MEMBER_*` permissions - but a real Super
+  Admin only ever holds `SUPER_ADMIN` via a *project membership* row, never a global
+  `User.roles` entry, so those permissions carry no JWT authority to check against a
+  plain `hasAuthority(...)` gate. `RoleController`/`PermissionController`'s read
+  (and, for roles, write) endpoints therefore also accept
+  `@projectAuthorizationService.isSuperAdminOfAnyProject()` - true for a Master Admin
+  or anyone who is `SUPER_ADMIN` on at least one project - as an explicit third way
+  through the gate, alongside the flat authority and the `MASTER_ADMIN` bypass.
+  Locked roles remain out of reach either way: `RoleService`'s editable check only
+  ever lets a Master Admin (not a Super Admin) touch them.
 - A per-project permission check (e.g. "can this caller manage *this* project's
   members") can't be expressed as a flat JWT authority, since holding it in one
   project must not imply holding it in another — see `ProjectAuthorizationService`,

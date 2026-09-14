@@ -31,7 +31,7 @@ public class PermissionController {
     private final PermissionService permissionService;
 
     @GetMapping
-    @PreAuthorize("hasAuthority('PERMISSION_READ') or hasAuthority('MASTER_ADMIN')")
+    @PreAuthorize("hasAuthority('PERMISSION_READ') or hasAuthority('MASTER_ADMIN') or @projectAuthorizationService.isSuperAdminOfAnyProject()")
     public ResponseEntity<List<PermissionResponse>> listPermissions() {
         return ResponseEntity.ok(permissionService.listPermissions().stream().map(PermissionResponse::from).toList());
     }
