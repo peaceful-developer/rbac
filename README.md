@@ -122,6 +122,12 @@ Master Admin (platform-level, not a Role — a flag on User)
   project must not imply holding it in another — see `ProjectAuthorizationService`,
   which checks a Master-Admin bypass first, then that user's actual
   `ProjectMembership` row for the specific project in the request.
+- A Super Admin never needs, and never gets, `USER_READ`/`USER_WRITE`/`USER_DELETE`
+  — global user administration (`GET/POST/PUT/DELETE /api/users`) stays entirely a
+  Master Admin/legacy-`ADMIN`-role affair. To let a Super Admin still pick an
+  existing account to add to their own project without that global authority,
+  membership uses its own narrower lookup — `GET /api/projects/{id}/candidate-users`
+  — instead of reusing `GET /api/users`.
 
 ## Prerequisites
 
@@ -763,6 +769,25 @@ curl http://localhost:8080/api/projects/1/members -H "Authorization: Bearer $SUP
 
 ```json
 [ { "userId": 2, "username": "projsuper", "email": "projsuper@example.com", "roles": ["SUPER_ADMIN"] } ]
+```
+
+#### `GET /api/projects/{id}/candidate-users` — requires `PROJECT_MEMBER_WRITE` within this project (or Master Admin)
+
+Existing users **not yet a member of this project**, as a deliberately minimal
+`{id, username, email}` projection — no roles, no enabled/locked status, no
+`masterAdmin` flag. This is what an "add member" picker calls; it exists as a
+separate, narrower endpoint from `GET /api/users` specifically because that one
+requires `USER_READ`, an authority a project's Super Admin does not (and should
+not need to) hold just to add someone to their own project.
+
+```bash
+curl http://localhost:8080/api/projects/1/candidate-users -H "Authorization: Bearer $SUPER_ADMIN_TOKEN"
+```
+
+**200 OK** — `CandidateUserResponse[]`:
+
+```json
+[ { "id": 7, "username": "newhire", "email": "newhire@example.com" } ]
 ```
 
 #### `POST /api/projects/{id}/members` — requires `PROJECT_MEMBER_WRITE` within this project (or Master Admin)

@@ -4,6 +4,7 @@ import com.iam.dto.request.AddProjectMemberRequest;
 import com.iam.dto.request.CreateProjectRequest;
 import com.iam.dto.request.UpdateProjectMemberRolesRequest;
 import com.iam.dto.request.UpdateProjectRequest;
+import com.iam.dto.response.CandidateUserResponse;
 import com.iam.dto.response.ProjectMemberResponse;
 import com.iam.dto.response.ProjectResponse;
 import com.iam.security.UserPrincipal;
@@ -77,6 +78,18 @@ public class ProjectController {
     @PreAuthorize("@projectAuthorizationService.hasProjectAuthority(#id, 'PROJECT_MEMBER_READ')")
     public ResponseEntity<List<ProjectMemberResponse>> listMembers(@PathVariable Long id) {
         return ResponseEntity.ok(projectService.listMembers(id));
+    }
+
+    /**
+     * Users not yet in this project, for an "add member" picker - deliberately a
+     * separate, narrower endpoint from {@code GET /api/users} (which requires
+     * {@code USER_READ}, an authority a project's Super Admin does not hold and
+     * should not need just to add someone to their own project).
+     */
+    @GetMapping("/{id}/candidate-users")
+    @PreAuthorize("@projectAuthorizationService.hasProjectAuthority(#id, 'PROJECT_MEMBER_WRITE')")
+    public ResponseEntity<List<CandidateUserResponse>> listCandidateUsers(@PathVariable Long id) {
+        return ResponseEntity.ok(projectService.listCandidateUsers(id));
     }
 
     /** Assigning the SUPER_ADMIN role here is further restricted to Master Admins inside ProjectService, beyond what this permission check alone allows. */
