@@ -180,7 +180,17 @@ by environment variable:
 | `iam.jwt.secret`                  | `JWT_SECRET`              | *(dev-only placeholder — change this)*     | HS-SHA secret, ≥32 bytes recommended |
 | `iam.jwt.access-token-ttl-minutes`| `JWT_ACCESS_TTL_MINUTES`  | `15`                                       | |
 | `iam.jwt.refresh-token-ttl-days`  | `JWT_REFRESH_TTL_DAYS`    | `7`                                        | |
-| `iam.cors.allowed-origins`        | `CORS_ALLOWED_ORIGINS`    | `http://localhost:3000`                    | comma-separated |
+| `iam.cors.allowed-origins`        | `CORS_ALLOWED_ORIGINS`    | `http://localhost:4200`                    | comma-separated; matches the rbac-ui companion frontend's dev-server port |
+
+> **Note on CORS with a frontend dev-server proxy:** rbac-ui's `ng serve` uses a
+> proxy (`proxy.conf.json`) so the *browser* only ever talks to `localhost:4200`,
+> avoiding browser-side CORS preflight entirely. But the proxy still forwards your
+> original `Origin: http://localhost:4200` header through to this backend when it
+> relays the request — and this backend's own CORS filter checks that header on
+> every request it receives, proxied or not. So `iam.cors.allowed-origins` still
+> needs to include the frontend's actual origin even when you're only ever testing
+> through the dev-server proxy, or you'll see requests rejected with
+> `Invalid CORS request` despite the browser never making a real cross-origin call.
 
 ## How authorization works
 

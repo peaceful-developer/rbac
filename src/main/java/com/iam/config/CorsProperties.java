@@ -14,6 +14,6 @@ public record CorsProperties(List<String> allowedOrigins) {
 
     /** Overrides the generated record accessor so an unset/empty property still yields a sane local-dev default instead of null/empty. */
     public List<String> allowedOrigins() {
-        return allowedOrigins == null || allowedOrigins.isEmpty() ? List.of("http://localhost:3000") : allowedOrigins;
+        return allowedOrigins == null || allowedOrigins.isEmpty() ? List.of("http://localhost:4200") : allowedOrigins;
     }
 }
