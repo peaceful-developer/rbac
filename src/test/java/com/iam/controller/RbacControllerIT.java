@@ -22,9 +22,9 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 /**
- * Exercises the "super admin" workflow end-to-end: an ADMIN-role user creates a new
- * permission, creates a role carrying it, and assigns that role to another user. Also
- * verifies a plain USER is denied the same actions.
+ * Exercises the Master Admin workflow end-to-end: creates a new permission, creates a
+ * role carrying it, and assigns that role to another user. Also verifies a plain USER
+ * is denied the same actions.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -66,9 +66,10 @@ class RbacControllerIT {
     }
 
     /**
-     * Creates an ADMIN-role user directly against the repositories (there is no public
-     * "become admin" endpoint by design - in real environments this role comes from the
-     * Flyway-seeded default admin account) and returns their access token.
+     * Creates an ADMIN-role, Master Admin user directly against the repositories
+     * (there is no public "become admin" endpoint by design - in real environments
+     * this comes from the Flyway-seeded default admin account) and returns their
+     * access token.
      */
     private String createAdminAndLogin(String username) throws Exception {
         Role adminRole = roleRepository.findByName("ADMIN").orElseThrow();
@@ -77,6 +78,7 @@ class RbacControllerIT {
                 .email(username + "@example.com")
                 .passwordHash(passwordEncoder.encode("SuperSecret1"))
                 .roles(Set.of(adminRole))
+                .masterAdmin(true)
                 .build();
         userRepository.save(admin);
 

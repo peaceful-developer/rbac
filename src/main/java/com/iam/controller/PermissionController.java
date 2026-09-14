@@ -14,9 +14,12 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 /**
- * Permission-catalog administration - {@code PERMISSION_READ}/{@code PERMISSION_WRITE}/
- * {@code PERMISSION_DELETE}-gated. This only manages the catalog of grantable actions
- * (name + description); attaching a permission to a role happens through
+ * Permission-catalog administration. Reading the catalog only requires
+ * {@code PERMISSION_READ} (so e.g. a project Super Admin can see what's available
+ * when building a role - see RoleController), but extending or shrinking the catalog
+ * itself is Master-Admin-only, not just any {@code PERMISSION_WRITE}/
+ * {@code PERMISSION_DELETE} holder - only a Master Admin defines what permissions
+ * exist at all. Attaching an existing permission to a role happens through
  * {@link RoleController#assignPermissions}, not here.
  */
 @RestController
@@ -28,20 +31,20 @@ public class PermissionController {
     private final PermissionService permissionService;
 
     @GetMapping
-    @PreAuthorize("hasAuthority('PERMISSION_READ')")
+    @PreAuthorize("hasAuthority('PERMISSION_READ') or hasAuthority('MASTER_ADMIN')")
     public ResponseEntity<List<PermissionResponse>> listPermissions() {
         return ResponseEntity.ok(permissionService.listPermissions().stream().map(PermissionResponse::from).toList());
     }
 
     /** Registers a new permission name so it becomes selectable when building/editing a role - see RoleController. */
     @PostMapping
-    @PreAuthorize("hasAuthority('PERMISSION_WRITE')")
+    @PreAuthorize("hasAuthority('MASTER_ADMIN')")
     public ResponseEntity<PermissionResponse> createPermission(@Valid @RequestBody CreatePermissionRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(PermissionResponse.from(permissionService.createPermission(request)));
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAuthority('PERMISSION_DELETE')")
+    @PreAuthorize("hasAuthority('MASTER_ADMIN')")
     public ResponseEntity<Void> deletePermission(@PathVariable Long id) {
         permissionService.deletePermission(id);
         return ResponseEntity.noContent().build();

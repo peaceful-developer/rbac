@@ -9,6 +9,7 @@ tokens + opaque rotating refresh tokens) plus full role-based access control
 - [Stack](#stack)
 - [Project structure](#project-structure)
 - [Data model](#data-model)
+- [Master Admin & Projects](#master-admin--projects)
 - [Prerequisites](#prerequisites)
 - [Setup](#setup)
   - [Option A: Docker Compose](#option-a-docker-compose-recommended)
@@ -22,6 +23,7 @@ tokens + opaque rotating refresh tokens) plus full role-based access control
   - [Users](#users)
   - [Roles](#roles)
   - [Permissions](#permissions)
+  - [Projects](#projects)
 - [Interactive API docs (Swagger)](#interactive-api-docs-swagger)
 
 ## Stack
@@ -60,29 +62,66 @@ src/test/java/com/iam/         MockMvc integration tests + unit tests (H2, Flywa
 
 ## Data model
 
-- **User** — account + credentials (`enabled`, `accountNonLocked` flags), many-to-many with Role
-- **Role** — named group of permissions, many-to-many with Permission
-- **Permission** — a single grantable action, e.g. `USER_WRITE`, `ROLE_READ`
+- **User** — account + credentials (`enabled`, `accountNonLocked` flags), plus a
+  platform-level `masterAdmin` flag (see [Master Admin & Projects](#master-admin--projects)).
+  Still many-to-many with Role for the legacy global admin-panel capabilities below.
+- **Role** — named group of permissions, many-to-many with Permission. Carries an
+  `editable` flag: a role created by a Master Admin is locked (`editable=false`) and
+  can only be modified by a Master Admin, even by someone else holding `ROLE_WRITE`.
+- **Permission** — a single grantable action, e.g. `USER_WRITE`, `ROLE_READ`. Roles
+  and permissions are a single global catalog, shared across every project.
 - **RefreshToken** — SHA-256 hash of an opaque token, single-use, revocable
+- **Project** — a tenant. Created/managed only by a Master Admin.
+- **ProjectMembership** — one user's role(s) *within one project* — see below.
 
-`V2__seed_data.sql` seeds a starter RBAC setup:
+`V2__seed_data.sql` seeds a starter RBAC setup for the legacy global admin panel:
 
 | Role      | Permissions                                                        |
 |-----------|---------------------------------------------------------------------|
-| `ADMIN`   | every permission (the "super admin" role)                          |
+| `ADMIN`   | every permission (locked; only a Master Admin can redefine it)     |
 | `MANAGER` | `USER_READ`, `USER_WRITE`, `ROLE_READ`, `PERMISSION_READ`           |
 | `USER`    | none — default role given to self-registered accounts               |
 
-Seeded permissions: `USER_READ`, `USER_WRITE`, `USER_DELETE`, `ROLE_READ`,
-`ROLE_WRITE`, `ROLE_DELETE`, `PERMISSION_READ`, `PERMISSION_WRITE`,
-`PERMISSION_DELETE`.
+`V4__project_permissions_and_super_admin_role.sql` adds the project layer's
+permissions (`PROJECT_READ/WRITE/DELETE`, `PROJECT_MEMBER_READ/WRITE/DELETE`) and a
+locked `SUPER_ADMIN` role (`PROJECT_MEMBER_READ/WRITE/DELETE`, `ROLE_READ`,
+`ROLE_WRITE`, `PERMISSION_READ`) — assigned to a user *within a project*, never globally.
 
-A default admin account is seeded — **username `admin`, password `Admin@12345`**.
-**Change this password immediately** in any shared or non-local environment.
+A default admin account is seeded — **username `admin`, password `Admin@12345`** —
+and is also the platform's first Master Admin. **Change this password immediately**
+in any shared or non-local environment.
 
-Because `ADMIN` holds every permission, that account can create new
-permissions, build new roles out of them, and assign any role to any user —
-the full super-admin workflow — purely through the HTTP API (see below).
+## Master Admin & Projects
+
+On top of the RBAC system above sits a second, simpler hierarchy for multi-tenancy:
+
+```
+Master Admin (platform-level, not a Role — a flag on User)
+  └─ creates/manages Projects (tenants) and the permission/role catalog
+     └─ each Project has one or more Super Admins (assigned only by a Master Admin)
+        └─ a Super Admin adds other users to their project on any existing role
+           (or a new role they build from the permission catalog)
+```
+
+- **Master Admin** is deliberately a boolean flag on `User`, not a `Role` row — so it
+  can never be granted through the normal role-assignment endpoints, only via
+  `PATCH /api/users/{id}/master-admin`, itself Master-Admin-only (so only a Master
+  Admin can create another one). It's embedded as a literal `MASTER_ADMIN` authority
+  in the JWT alongside the usual role/permission authorities.
+- Only a Master Admin can create permissions, and only a Master Admin's roles come
+  out locked (`editable=false`) — see the `Role` entity above.
+- Only a Master Admin can create/update/delete a `Project`, and only a Master Admin
+  can assign or remove the `SUPER_ADMIN` role on a project membership — a project's
+  own Super Admin can add other members on any other role, but can't mint a rival
+  Super Admin, demote one, or be removed by one.
+- Roles/permissions stay a single global catalog (not project-scoped) — a Super
+  Admin builds new roles from whatever permissions a Master Admin has defined, and
+  those roles are then usable across any project, same as the legacy `ADMIN`/`MANAGER`/`USER` roles.
+- A per-project permission check (e.g. "can this caller manage *this* project's
+  members") can't be expressed as a flat JWT authority, since holding it in one
+  project must not imply holding it in another — see `ProjectAuthorizationService`,
+  which checks a Master-Admin bypass first, then that user's actual
+  `ProjectMembership` row for the specific project in the request.
 
 ## Prerequisites
 
@@ -517,6 +556,21 @@ curl -X DELETE http://localhost:8080/api/users/2 -H "Authorization: Bearer $ADMI
 
 **204 No Content**. Errors: `404`.
 
+#### `PATCH /api/users/{id}/master-admin` — requires `MASTER_ADMIN`
+
+Grants or revokes the platform-level Master Admin flag. Only an existing Master
+Admin can call this — it's the only way this flag ever changes (there's no
+`MASTER_ADMIN` role row for `PUT /api/users/{id}/roles` to touch).
+
+```bash
+curl -X PATCH http://localhost:8080/api/users/5/master-admin \
+  -H "Authorization: Bearer $MASTER_ADMIN_TOKEN" -H "Content-Type: application/json" \
+  -d '{"masterAdmin": true}'
+```
+
+**200 OK** — `UserResponse` (now including `masterAdmin`). Errors: `403` if the
+caller isn't a Master Admin, `404` unknown user.
+
 ### Roles
 
 Base path: `/api/roles`.
@@ -616,7 +670,7 @@ curl http://localhost:8080/api/permissions -H "Authorization: Bearer $ADMIN_TOKE
 [ { "id": 1, "name": "USER_READ", "description": "View user accounts" } ]
 ```
 
-#### `POST /api/permissions` — requires `PERMISSION_WRITE`
+#### `POST /api/permissions` — requires `MASTER_ADMIN`
 
 Request body (`CreatePermissionRequest`):
 
@@ -633,7 +687,7 @@ curl -X POST http://localhost:8080/api/permissions \
 
 **201 Created** — `PermissionResponse`. Errors: `409` permission name exists.
 
-#### `DELETE /api/permissions/{id}` — requires `PERMISSION_DELETE`
+#### `DELETE /api/permissions/{id}` — requires `MASTER_ADMIN`
 
 Also removes the permission from any role currently carrying it, and clears
 the authorization cache so the change applies immediately.
@@ -643,6 +697,104 @@ curl -X DELETE http://localhost:8080/api/permissions/10 -H "Authorization: Beare
 ```
 
 **204 No Content**. Errors: `404`.
+
+### Projects
+
+Base path: `/api/projects`. Project CRUD is Master-Admin-only; membership endpoints
+are project-scoped — a caller needs either `MASTER_ADMIN` or the relevant
+`PROJECT_MEMBER_*` permission *within that specific project* (via a `SUPER_ADMIN` or
+custom role assigned on their `ProjectMembership` for it — see
+[Master Admin & Projects](#master-admin--projects)). `GET /api/projects` itself needs
+no permission — every authenticated caller gets back only the projects they're
+allowed to see (all of them for a Master Admin, just their own memberships otherwise).
+
+#### `GET /api/projects`
+
+```bash
+curl http://localhost:8080/api/projects -H "Authorization: Bearer $TOKEN"
+```
+
+**200 OK** — `ProjectResponse[]`, each with `myRoles` set to the caller's own roles
+in that project (empty if none):
+
+```json
+[
+  {
+    "id": 1, "name": "Acme Corp", "description": "First tenant",
+    "myRoles": ["SUPER_ADMIN"],
+    "createdAt": "2026-09-14T10:20:24Z", "updatedAt": "2026-09-14T10:20:24Z"
+  }
+]
+```
+
+#### `GET /api/projects/{id}` — Master Admin or a member of this project
+
+**200 OK** — `ProjectResponse`. Errors: `403`, `404`.
+
+#### `POST /api/projects` — requires `MASTER_ADMIN`
+
+```bash
+curl -X POST http://localhost:8080/api/projects \
+  -H "Authorization: Bearer $MASTER_ADMIN_TOKEN" -H "Content-Type: application/json" \
+  -d '{"name": "Acme Corp", "description": "First tenant"}'
+```
+
+**201 Created** — `ProjectResponse`. Errors: `409` name taken.
+
+#### `PUT /api/projects/{id}` — requires `MASTER_ADMIN`
+
+Partial update (name/description), same optional-field pattern as `UpdateUserRequest`.
+
+**200 OK** — `ProjectResponse`. Errors: `404`, `409`.
+
+#### `DELETE /api/projects/{id}` — requires `MASTER_ADMIN`
+
+Cascades: deletes every membership (and the members' project-scoped roles) along with it.
+
+**204 No Content**. Errors: `404`.
+
+#### `GET /api/projects/{id}/members` — requires `PROJECT_MEMBER_READ` within this project (or Master Admin)
+
+```bash
+curl http://localhost:8080/api/projects/1/members -H "Authorization: Bearer $SUPER_ADMIN_TOKEN"
+```
+
+**200 OK** — `ProjectMemberResponse[]`:
+
+```json
+[ { "userId": 2, "username": "projsuper", "email": "projsuper@example.com", "roles": ["SUPER_ADMIN"] } ]
+```
+
+#### `POST /api/projects/{id}/members` — requires `PROJECT_MEMBER_WRITE` within this project (or Master Admin)
+
+Adds an existing user (see `/api/auth/register` or `POST /api/users` to create the
+account first) to the project with the given role(s). **Assigning `SUPER_ADMIN`
+here requires the caller to be a Master Admin** — a project's own Super Admin gets
+`403` if they try, even though they otherwise pass the `PROJECT_MEMBER_WRITE` check.
+
+```bash
+curl -X POST http://localhost:8080/api/projects/1/members \
+  -H "Authorization: Bearer $SUPER_ADMIN_TOKEN" -H "Content-Type: application/json" \
+  -d '{"userId": 7, "roles": ["MANAGER"]}'
+```
+
+**201 Created** — `ProjectMemberResponse`. Errors: `403` (insufficient project
+authority, or a non-Master-Admin attempting to assign `SUPER_ADMIN`), `404` unknown
+user/role, `409` already a member (use the roles-update endpoint instead).
+
+#### `PUT /api/projects/{id}/members/{userId}/roles` — requires `PROJECT_MEMBER_WRITE` within this project (or Master Admin)
+
+Replaces (not merges with) the member's role set. Adding *or removing*
+`SUPER_ADMIN` is Master-Admin-only, same restriction as above — so a Super Admin
+can't demote themselves or another Super Admin out of the role either.
+
+**200 OK** — `ProjectMemberResponse`. Errors: `403`, `404`.
+
+#### `DELETE /api/projects/{id}/members/{userId}` — requires `PROJECT_MEMBER_DELETE` within this project (or Master Admin)
+
+Removing a member who holds `SUPER_ADMIN` is Master-Admin-only.
+
+**204 No Content**. Errors: `403`, `404`.
 
 ## Interactive API docs (Swagger)
 
