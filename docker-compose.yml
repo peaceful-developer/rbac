@@ -1,17 +1,18 @@
 services:
-  postgres:
-    image: postgres:16-alpine
-    container_name: iam-postgres
+  mysql:
+    image: mysql:8.4
+    container_name: iam-mysql
     environment:
-      POSTGRES_DB: iamdb
-      POSTGRES_USER: iam
-      POSTGRES_PASSWORD: iam
+      MYSQL_DATABASE: iamdb
+      MYSQL_USER: iam
+      MYSQL_PASSWORD: iam
+      MYSQL_ROOT_PASSWORD: root
     ports:
-      - "5432:5432"
+      - "3306:3306"
     volumes:
-      - iam-postgres-data:/var/lib/postgresql/data
+      - iam-mysql-data:/var/lib/mysql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U iam -d iamdb"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "iam", "-piam"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -20,10 +21,10 @@ services:
     build: .
     container_name: iam-service
     depends_on:
-      postgres:
+      mysql:
         condition: service_healthy
     environment:
-      DB_URL: jdbc:postgresql://postgres:5432/iamdb
+      DB_URL: jdbc:mysql://mysql:3306/iamdb?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
       DB_USERNAME: iam
       DB_PASSWORD: iam
       JWT_SECRET: ${JWT_SECRET:-change-this-super-secret-key-which-should-be-at-least-256-bits-long-for-hs256}
@@ -32,4 +33,4 @@ services:
       - "8080:8080"
 
 volumes:
-  iam-postgres-data:
+  iam-mysql-data:
