@@ -13,6 +13,11 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
+/**
+ * Admin CRUD for the {@code Permission} catalog itself - creating new grantable
+ * actions and retiring old ones. Assigning an existing permission to a role is
+ * handled by {@link RoleService}, not here.
+ */
 @Service
 @RequiredArgsConstructor
 public class PermissionService {
@@ -43,6 +48,13 @@ public class PermissionService {
         return permissionRepository.save(permission);
     }
 
+    /**
+     * Deleting a permission implicitly removes it from every role that carries it (via
+     * the role_permissions join table's foreign key), which changes what those roles'
+     * users can do - so, like RoleService's permission-set changes, this clears the
+     * whole authorization cache rather than trying to figure out which cached entries
+     * are affected.
+     */
     @Transactional
     public void deletePermission(Long id) {
         Permission permission = getById(id);

@@ -13,6 +13,17 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+/**
+ * Adapts our {@link User} entity to Spring Security's {@link UserDetails} contract.
+ * This is what {@code @PreAuthorize} and friends ultimately see as "the current user."
+ * <p>
+ * The important piece is {@link #buildAuthorities}: it flattens a user's roles into
+ * the two kinds of authority Spring Security checks throughout this app -
+ * {@code ROLE_<name>} (e.g. "ROLE_ADMIN", for role-based checks) and each individual
+ * permission name from every role the user holds (e.g. "USER_WRITE", for the
+ * {@code hasAuthority(...)} checks on controller endpoints). Both live in the same
+ * flat authority set; Spring Security doesn't distinguish them.
+ */
 @Getter
 public class UserPrincipal implements UserDetails {
 
@@ -34,6 +45,7 @@ public class UserPrincipal implements UserDetails {
         this.authorities = buildAuthorities(user.getRoles());
     }
 
+    /** Union of "ROLE_&lt;name&gt;" for every role, plus every permission name across all of them, deduplicated. */
     private static Collection<? extends GrantedAuthority> buildAuthorities(Set<Role> roles) {
         Stream<String> roleAuthorities = roles.stream().map(r -> "ROLE_" + r.getName());
         Stream<String> permissionAuthorities = roles.stream()
@@ -60,6 +72,7 @@ public class UserPrincipal implements UserDetails {
         return username;
     }
 
+    /** Always true - this codebase has no notion of account expiry, only enabled/locked. */
     @Override
     public boolean isAccountNonExpired() {
         return true;
@@ -70,6 +83,7 @@ public class UserPrincipal implements UserDetails {
         return accountNonLocked;
     }
 
+    /** Always true - this codebase has no notion of credential expiry (e.g. forced periodic password rotation). */
     @Override
     public boolean isCredentialsNonExpired() {
         return true;

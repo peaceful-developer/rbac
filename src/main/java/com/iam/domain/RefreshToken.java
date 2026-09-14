@@ -9,6 +9,16 @@ import lombok.Setter;
 
 import java.time.Instant;
 
+/**
+ * A long-lived, single-use token that lets a client obtain a new short-lived JWT
+ * access token without re-entering credentials (see {@code AuthService#refresh}).
+ * <p>
+ * The raw token value is never stored - only its SHA-256 hash - so a database leak
+ * does not by itself expose usable refresh tokens (see
+ * {@code com.iam.security.RefreshTokenGenerator}). Refreshing rotates the token:
+ * the one used is immediately marked {@link #revoked}, and a new one is issued, so a
+ * given raw token value can only ever be exchanged once.
+ */
 @Entity
 @Table(name = "refresh_tokens")
 @Getter
@@ -45,6 +55,7 @@ public class RefreshToken {
         this.createdAt = Instant.now();
     }
 
+    /** True once past {@link #expiresAt}; checked alongside {@link #revoked} before honoring a refresh request. */
     public boolean isExpired() {
         return Instant.now().isAfter(expiresAt);
     }

@@ -26,6 +26,15 @@ import java.util.HashSet;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+/**
+ * Admin user-management (list/create/update/assign-roles/delete) plus the
+ * self-service "change my own password" operation. Backs the {@code /api/users}
+ * endpoints - see UserController for which operations require which permission.
+ * <p>
+ * Several methods here evict the cached authorization data (see CacheConfig) for the
+ * affected user so that role/enabled/locked changes are enforced on that user's very
+ * next request rather than only after the cache's TTL expires.
+ */
 @Service
 @RequiredArgsConstructor
 public class UserService {
@@ -53,6 +62,7 @@ public class UserService {
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + username));
     }
 
+    /** Admin-side account creation - unlike self-registration, the caller can assign an initial role set directly. */
     @Transactional
     public User createUser(CreateUserRequest request) {
         if (userRepository.existsByUsername(request.username())) {
@@ -76,6 +86,13 @@ public class UserService {
         return userRepository.save(user);
     }
 
+    /**
+     * Partial update: every field on {@link UpdateUserRequest} is optional and only
+     * applied if present, so callers can change just e.g. {@code enabled} without
+     * having to resend the whole profile. Cache eviction here is what makes toggling
+     * {@code enabled}/{@code accountNonLocked} take effect immediately instead of
+     * waiting out the cache TTL.
+     */
     @Transactional
     @CacheEvict(cacheNames = CacheConfig.USER_DETAILS_CACHE, key = "#result.username")
     public User updateUser(Long id, UpdateUserRequest request) {
@@ -103,6 +120,7 @@ public class UserService {
         return userRepository.save(user);
     }
 
+    /** Replaces (not merges with) the user's entire role set - see {@link #resolveRoles}. */
     @Transactional
     @CacheEvict(cacheNames = CacheConfig.USER_DETAILS_CACHE, key = "#result.username")
     public User assignRoles(Long id, AssignRolesRequest request) {
@@ -111,6 +129,7 @@ public class UserService {
         return userRepository.save(user);
     }
 
+    /** Deletes the account and revokes any outstanding refresh tokens/cache entry so a deleted user can't keep a session alive. */
     @Transactional
     public void deleteUser(Long id) {
         User user = getById(id);
@@ -119,6 +138,13 @@ public class UserService {
         evictUserDetailsCache(user.getUsername());
     }
 
+    /**
+     * Self-service password change (the caller changes their own password, verified
+     * against their current one - there is no admin "reset another user's password"
+     * endpoint). Revokes all of the user's refresh tokens afterward: this device's
+     * current access token remains valid until it naturally expires, but every other
+     * signed-in device/session is forced to log in again with the new password.
+     */
     @Transactional
     public void changePassword(Long id, ChangePasswordRequest request) {
         User user = getById(id);
@@ -130,6 +156,7 @@ public class UserService {
         refreshTokenRepository.revokeAllForUser(user);
     }
 
+    /** Used where @CacheEvict's SpEL can't apply (deleteUser has no return value to key off of). */
     private void evictUserDetailsCache(String username) {
         var cache = cacheManager.getCache(CacheConfig.USER_DETAILS_CACHE);
         if (cache != null) {
@@ -137,6 +164,7 @@ public class UserService {
         }
     }
 
+    /** Looks up each requested role by name, or falls back to the default USER role if none were specified. Every name must already exist. */
     private Set<Role> resolveRoles(Set<String> roleNames) {
         if (roleNames == null || roleNames.isEmpty()) {
             Role defaultRole = roleRepository.findByName("USER")

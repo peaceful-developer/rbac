@@ -44,6 +44,7 @@ public class RoleService {
                 .orElseThrow(() -> new ResourceNotFoundException("Role not found: " + id));
     }
 
+    /** Creates a role with an optional starting permission set (empty set if none given - see {@link #resolvePermissions}). */
     @Transactional
     public Role createRole(CreateRoleRequest request) {
         if (roleRepository.existsByName(request.name())) {
@@ -68,6 +69,7 @@ public class RoleService {
         return roleRepository.save(role);
     }
 
+    /** Replaces (not merges with) the role's entire permission set, then clears the auth cache - see the class-level note above. */
     @Transactional
     public Role assignPermissions(Long id, AssignPermissionsRequest request) {
         Role role = getById(id);
@@ -91,6 +93,7 @@ public class RoleService {
         }
     }
 
+    /** Looks up each requested permission by name (every name must already exist) - empty/null input yields an empty set, not an error. */
     private Set<Permission> resolvePermissions(Set<String> permissionNames) {
         if (permissionNames == null || permissionNames.isEmpty()) {
             return new HashSet<>();
