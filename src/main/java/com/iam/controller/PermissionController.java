@@ -13,6 +13,12 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
+/**
+ * Permission-catalog administration - {@code PERMISSION_READ}/{@code PERMISSION_WRITE}/
+ * {@code PERMISSION_DELETE}-gated. This only manages the catalog of grantable actions
+ * (name + description); attaching a permission to a role happens through
+ * {@link RoleController#assignPermissions}, not here.
+ */
 @RestController
 @RequestMapping("/api/permissions")
 @RequiredArgsConstructor
@@ -27,6 +33,7 @@ public class PermissionController {
         return ResponseEntity.ok(permissionService.listPermissions().stream().map(PermissionResponse::from).toList());
     }
 
+    /** Registers a new permission name so it becomes selectable when building/editing a role - see RoleController. */
     @PostMapping
     @PreAuthorize("hasAuthority('PERMISSION_WRITE')")
     public ResponseEntity<PermissionResponse> createPermission(@Valid @RequestBody CreatePermissionRequest request) {

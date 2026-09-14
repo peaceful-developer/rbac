@@ -8,6 +8,13 @@ import io.swagger.v3.oas.models.security.SecurityScheme;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+/**
+ * Configures springdoc's generated OpenAPI document (served at /v3/api-docs and
+ * rendered by Swagger UI at /swagger-ui.html - see SecurityConfig for why those paths
+ * are public). Registering the "bearerAuth" scheme here is what makes Swagger UI show
+ * an "Authorize" button that lets you paste an access token and try protected
+ * endpoints directly from the browser.
+ */
 @Configuration
 public class OpenApiConfig {
 

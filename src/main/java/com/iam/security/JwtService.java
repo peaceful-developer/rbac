@@ -55,6 +55,7 @@ public class JwtService {
                 .compact();
     }
 
+    /** Verifies the signature and expiry, then returns the decoded claims. Throws JwtException for anything invalid/expired/tampered. */
     public Claims parseClaims(String token) throws JwtException {
         return Jwts.parser()
                 .verifyWith(signingKey())
@@ -67,11 +68,13 @@ public class JwtService {
         return parseClaims(token).getSubject();
     }
 
+    /** True only if the token is well-formed/unexpired AND its subject matches the username it's being presented for. */
     public boolean isTokenValid(String token, String expectedUsername) {
         Claims claims = parseClaims(token);
         return claims.getSubject().equals(expectedUsername) && claims.getExpiration().after(new java.util.Date());
     }
 
+    /** Used to populate AuthResponse.expiresInSeconds so clients know when to proactively refresh. */
     public long getAccessTokenTtlSeconds() {
         return jwtProperties.accessTokenTtlMinutes() * 60;
     }

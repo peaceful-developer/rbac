@@ -6,6 +6,7 @@ import java.time.Instant;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+/** Public view of a User entity - notably excludes passwordHash; {@code roles} is just names, not full Role objects. */
 public record UserResponse(
         Long id,
         String username,

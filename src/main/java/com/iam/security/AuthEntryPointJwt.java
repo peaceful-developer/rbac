@@ -10,6 +10,13 @@ import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 
+/**
+ * Wired into SecurityConfig as the {@code authenticationEntryPoint}: Spring Security
+ * invokes this whenever an unauthenticated request hits an endpoint that requires
+ * authentication (i.e. no valid bearer token was ever presented). Its only job is to
+ * turn that into our standard JSON {@code ErrorResponse} shape (401) instead of
+ * Spring's default HTML/plain-text error page.
+ */
 @Component
 @RequiredArgsConstructor
 public class AuthEntryPointJwt implements AuthenticationEntryPoint {

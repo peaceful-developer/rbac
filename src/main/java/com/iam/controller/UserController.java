@@ -18,6 +18,17 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
+/**
+ * User administration ({@code USER_READ}/{@code USER_WRITE}/{@code USER_DELETE}-gated,
+ * see the {@code @PreAuthorize} on each admin endpoint) plus two self-service endpoints
+ * ({@code /me}, {@code /me/password}) available to any authenticated user regardless of
+ * permissions - those two act on the caller's own account, identified via the injected
+ * {@link UserPrincipal} rather than a path variable.
+ * <p>
+ * {@code /me} is registered before {@code /{id}} so Spring MVC matches the literal
+ * path first; a numeric {@code id} would never collide with it anyway, but the
+ * ordering keeps the two clearly separate here regardless.
+ */
 @RestController
 @RequestMapping("/api/users")
 @RequiredArgsConstructor
@@ -26,11 +37,13 @@ public class UserController {
 
     private final UserService userService;
 
+    /** No @PreAuthorize - every authenticated user can view their own profile, permissions notwithstanding. */
     @GetMapping("/me")
     public ResponseEntity<UserResponse> getCurrentUser(@AuthenticationPrincipal UserPrincipal principal) {
         return ResponseEntity.ok(UserResponse.from(userService.getById(principal.getId())));
     }
 
+    /** No @PreAuthorize - self-service; see UserService#changePassword for the current-password check and session-revocation behavior. */
     @PatchMapping("/me/password")
     public ResponseEntity<Void> changeOwnPassword(@AuthenticationPrincipal UserPrincipal principal,
                                                    @Valid @RequestBody ChangePasswordRequest request) {
@@ -50,18 +63,21 @@ public class UserController {
         return ResponseEntity.ok(UserResponse.from(userService.getById(id)));
     }
 
+    /** Admin-side creation, with an optional initial role set - see CreateUserRequest. */
     @PostMapping
     @PreAuthorize("hasAuthority('USER_WRITE')")
     public ResponseEntity<UserResponse> createUser(@Valid @RequestBody CreateUserRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(UserResponse.from(userService.createUser(request)));
     }
 
+    /** Partial profile/status update - see UpdateUserRequest; does not touch roles or password (those have their own endpoints). */
     @PutMapping("/{id}")
     @PreAuthorize("hasAuthority('USER_WRITE')")
     public ResponseEntity<UserResponse> updateUser(@PathVariable Long id, @Valid @RequestBody UpdateUserRequest request) {
         return ResponseEntity.ok(UserResponse.from(userService.updateUser(id, request)));
     }
 
+    /** Replaces (not merges with) the target user's entire role set. */
     @PutMapping("/{id}/roles")
     @PreAuthorize("hasAuthority('USER_WRITE')")
     public ResponseEntity<UserResponse> assignRoles(@PathVariable Long id, @Valid @RequestBody AssignRolesRequest request) {

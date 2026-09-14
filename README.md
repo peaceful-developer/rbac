@@ -12,7 +12,7 @@ tokens + opaque rotating refresh tokens) plus full role-based access control
 - [Prerequisites](#prerequisites)
 - [Setup](#setup)
   - [Option A: Docker Compose](#option-a-docker-compose-recommended)
-  - [Option B: run locally against your own Postgres](#option-b-run-locally-against-your-own-postgres)
+  - [Option B: run locally against your own MySQL](#option-b-run-locally-against-your-own-mysql)
   - [Running tests](#running-tests)
 - [Configuration reference](#configuration-reference)
 - [How authorization works](#how-authorization-works)
@@ -28,7 +28,7 @@ tokens + opaque rotating refresh tokens) plus full role-based access control
 
 - Java 21, Spring Boot 3.3, Gradle (wrapper included, no local install needed)
 - Spring Security 6 — stateless JWT authentication, method-level `@PreAuthorize`
-- Spring Data JPA + PostgreSQL, Flyway migrations
+- Spring Data JPA + MySQL, Flyway migrations
 - Caffeine cache in front of role/permission resolution (see [How authorization works](#how-authorization-works))
 - springdoc-openapi (Swagger UI / OpenAPI 3 spec)
 - JUnit 5, Spring MockMvc, H2 (test-only)
@@ -88,13 +88,13 @@ the full super-admin workflow — purely through the HTTP API (see below).
 
 - JDK 21 (only needed if not using Docker — the Gradle wrapper handles Gradle itself)
 - Docker + Docker Compose (for the easiest path), **or**
-- A local PostgreSQL 14+ instance if running outside Docker
+- A local MySQL 8+ instance if running outside Docker
 
 ## Setup
 
 ### Option A: Docker Compose (recommended)
 
-Starts Postgres and the service together; Flyway migrates the schema on boot.
+Starts MySQL and the service together; Flyway migrates the schema on boot.
 
 ```bash
 git clone <this-repo>
@@ -111,25 +111,27 @@ Override the JWT secret used by the compose stack:
 JWT_SECRET=$(openssl rand -base64 48) docker compose up --build
 ```
 
-Stop and remove containers (keeps the named Postgres volume):
+Stop and remove containers (keeps the named MySQL volume):
 
 ```bash
 docker compose down
 ```
 
-### Option B: run locally against your own Postgres
+### Option B: run locally against your own MySQL
 
-1. Create the database and role:
+1. Create the database and user:
 
    ```sql
-   CREATE USER iam WITH PASSWORD 'iam';
-   CREATE DATABASE iamdb OWNER iam;
+   CREATE DATABASE iamdb CHARACTER SET utf8mb4;
+   CREATE USER 'iam'@'%' IDENTIFIED BY 'iam';
+   GRANT ALL PRIVILEGES ON iamdb.* TO 'iam'@'%';
+   FLUSH PRIVILEGES;
    ```
 
 2. Export configuration (or copy `application.yml` and edit it directly):
 
    ```bash
-   export DB_URL=jdbc:postgresql://localhost:5432/iamdb
+   export DB_URL="jdbc:mysql://localhost:3306/iamdb?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC"
    export DB_USERNAME=iam
    export DB_PASSWORD=iam
    export JWT_SECRET=some-secret-at-least-32-bytes-long
@@ -170,7 +172,7 @@ by environment variable:
 
 | Property                          | Env var                  | Default                                   | Notes |
 |------------------------------------|---------------------------|--------------------------------------------|-------|
-| `spring.datasource.url`           | `DB_URL`                 | `jdbc:postgresql://localhost:5432/iamdb`  | |
+| `spring.datasource.url`           | `DB_URL`                 | `jdbc:mysql://localhost:3306/iamdb?...`   | |
 | `spring.datasource.username`      | `DB_USERNAME`             | `iam`                                      | |
 | `spring.datasource.password`      | `DB_PASSWORD`             | `iam`                                      | |
 | `server.port`                     | `SERVER_PORT`             | `8080`                                     | |
