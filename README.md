@@ -135,10 +135,12 @@ Master Admin (platform-level, not a Role — a flag on User)
   `ProjectMembership` row for the specific project in the request.
 - A Super Admin never needs, and never gets, `USER_READ`/`USER_WRITE`/`USER_DELETE`
   — global user administration (`GET/POST/PUT/DELETE /api/users`) stays entirely a
-  Master Admin/legacy-`ADMIN`-role affair. To let a Super Admin still pick an
-  existing account to add to their own project without that global authority,
-  membership uses its own narrower lookup — `GET /api/projects/{id}/candidate-users`
-  — instead of reusing `GET /api/users`.
+  Master Admin/legacy-`ADMIN`-role affair. Everything a Super Admin does with users
+  is therefore project-scoped and routed through `/api/projects/{id}/...` instead:
+  `GET .../candidate-users` to pick an existing account, `POST .../users` to create
+  a brand-new one straight into their project, and `GET/POST/PUT/DELETE .../members`
+  to manage who's in it. None of those can reach beyond the one project in the path,
+  which is exactly why they exist rather than relaxing the global `/api/users` gates.
 
 ## Prerequisites
 
@@ -800,6 +802,30 @@ curl http://localhost:8080/api/projects/1/candidate-users -H "Authorization: Bea
 ```json
 [ { "id": 7, "username": "newhire", "email": "newhire@example.com" } ]
 ```
+
+#### `POST /api/projects/{id}/users` — requires `PROJECT_MEMBER_WRITE` within this project (or Master Admin)
+
+Creates a **brand-new account** and adds it to this project in one call — the
+tenant-onboarding counterpart to the endpoint below, which can only pick someone
+who already has an account. A Super Admin holds no `USER_WRITE`, so without this
+they could only ever add staff who had already self-registered.
+
+`roles` are the new user's roles *within this project*. The account itself is
+created with the same permission-less baseline `USER` global role that
+self-registration grants, so everything it can do comes from its project
+membership — which is what keeps a Super Admin's reach inside their own project.
+Assigning `SUPER_ADMIN` here is Master-Admin-only, same as everywhere else.
+
+```bash
+curl -X POST http://localhost:8080/api/projects/1/users \
+  -H "Authorization: Bearer $SUPER_ADMIN_TOKEN" -H "Content-Type: application/json" \
+  -d '{"username": "newstaff", "email": "newstaff@acme.com", "password": "SuperSecret1",
+       "firstName": "New", "lastName": "Staff", "roles": ["MANAGER"]}'
+```
+
+**201 Created** — `ProjectMemberResponse`. Errors: `403` (insufficient project
+authority, or a non-Master-Admin attempting to assign `SUPER_ADMIN`), `404` unknown
+role, `409` username/email already taken.
 
 #### `POST /api/projects/{id}/members` — requires `PROJECT_MEMBER_WRITE` within this project (or Master Admin)
 

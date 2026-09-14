@@ -2,6 +2,7 @@ package com.iam.controller;
 
 import com.iam.dto.request.AddProjectMemberRequest;
 import com.iam.dto.request.CreateProjectRequest;
+import com.iam.dto.request.CreateProjectUserRequest;
 import com.iam.dto.request.UpdateProjectMemberRolesRequest;
 import com.iam.dto.request.UpdateProjectRequest;
 import com.iam.dto.response.CandidateUserResponse;
@@ -90,6 +91,26 @@ public class ProjectController {
     @PreAuthorize("@projectAuthorizationService.hasProjectAuthority(#id, 'PROJECT_MEMBER_WRITE')")
     public ResponseEntity<List<CandidateUserResponse>> listCandidateUsers(@PathVariable Long id) {
         return ResponseEntity.ok(projectService.listCandidateUsers(id));
+    }
+
+    /**
+     * Creates a brand-new account directly into this project - what a tenant's Super
+     * Admin needs to onboard their own staff, who by definition don't have accounts
+     * yet. {@code POST /api/members} above can only pick an existing account, and
+     * {@code POST /api/users} (global, {@code USER_WRITE}-gated) is out of a Super
+     * Admin's reach by design, so without this a Super Admin could only ever add
+     * people who had already self-registered.
+     * <p>
+     * Same gate as adding a member, and the same SUPER_ADMIN restriction applies
+     * inside ProjectService - a Super Admin can't bootstrap a rival this way either.
+     */
+    @PostMapping("/{id}/users")
+    @PreAuthorize("@projectAuthorizationService.hasProjectAuthority(#id, 'PROJECT_MEMBER_WRITE')")
+    public ResponseEntity<ProjectMemberResponse> createUserInProject(@PathVariable Long id,
+                                                                      @Valid @RequestBody CreateProjectUserRequest request,
+                                                                      @AuthenticationPrincipal UserPrincipal principal) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(projectService.createUserInProject(id, request, principal.isMasterAdmin()));
     }
 
     /** Assigning the SUPER_ADMIN role here is further restricted to Master Admins inside ProjectService, beyond what this permission check alone allows. */
